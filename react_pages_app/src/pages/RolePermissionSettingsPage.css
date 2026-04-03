@@ -1,0 +1,277 @@
+.role-settings-page {
+  min-height: 100vh;
+  display: flex;
+  background: #f2f5f8;
+}
+
+.role-settings-page__sidebar {
+  width: 17rem;
+  padding: 2rem 1.2rem;
+  background: #f8fafc;
+  border-right: 1px solid rgba(96, 113, 133, 0.12);
+}
+
+.role-settings-page__brand {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.role-settings-page__brand div:first-child {
+  width: 2.8rem;
+  height: 2.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.95rem;
+  background: #0d2238;
+  color: white;
+}
+
+.role-settings-page__brand h1,
+.role-settings-page__hero h2,
+.role-settings-page__permissions strong,
+.role-settings-page__card h3,
+.role-settings-page__summary h3 {
+  color: #0d2238;
+}
+
+.role-settings-page__brand p,
+.role-settings-page__hero span,
+.role-settings-page__permissions p,
+.role-settings-page__summary p,
+.role-settings-page__summary small {
+  color: #66778c;
+}
+
+.role-settings-page__sidebar nav {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.6rem;
+}
+
+.role-settings-page__sidebar a {
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  color: #66778c;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.role-settings-page__sidebar a[data-active='true'] {
+  background: white;
+  color: #0d2238;
+}
+
+.role-settings-page__main {
+  flex: 1;
+}
+
+.role-settings-page__topbar,
+.role-settings-page__hero,
+.role-settings-page__grid {
+  display: flex;
+}
+
+.role-settings-page__topbar {
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.4rem;
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom: 1px solid rgba(96, 113, 133, 0.1);
+}
+
+.role-settings-page__topbar label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(25rem, 100%);
+  padding: 0.9rem 1rem;
+  border-radius: 999px;
+  background: white;
+  color: #66778c;
+}
+
+.role-settings-page__topbar input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.role-settings-page__topbar button,
+.role-settings-page__summary button,
+.role-settings-page__tabs button {
+  border: 0;
+  cursor: pointer;
+}
+
+.role-settings-page__topbar button {
+  border-radius: 1rem;
+  padding: 0.95rem 1.1rem;
+  background: #0d2238;
+  color: white;
+  font-weight: 800;
+}
+
+.role-settings-page__content {
+  padding: 1.4rem;
+}
+
+.role-settings-page__hero {
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+}
+
+.role-settings-page__hero p {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #6d7c8c;
+}
+
+.role-settings-page__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.role-settings-page__tabs button {
+  border-radius: 999px;
+  padding: 0.8rem 1rem;
+  background: white;
+  color: #66778c;
+  font-weight: 700;
+}
+
+.role-settings-page__tabs button[data-active='true'] {
+  background: #0d2238;
+  color: white;
+}
+
+.role-settings-page__grid {
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+.role-settings-page__permissions,
+.role-settings-page__card,
+.role-settings-page__summary {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 1.8rem;
+}
+
+.role-settings-page__permissions {
+  flex: 1;
+  padding: 1rem;
+}
+
+.role-settings-page__permissions header,
+.role-settings-page__permissions article {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.2fr) repeat(4, 5rem);
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.role-settings-page__permissions header {
+  padding: 0.6rem 0.8rem 1rem;
+  color: #66778c;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+}
+
+.role-settings-page__permissions article {
+  padding: 1rem 0.8rem;
+  border-radius: 1rem;
+  background: #f5f8fb;
+}
+
+.role-settings-page__permissions label {
+  display: grid;
+  place-items: center;
+}
+
+.role-settings-page__stack {
+  width: 22rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.role-settings-page__card,
+.role-settings-page__summary {
+  padding: 1.2rem;
+}
+
+.role-settings-page__rule {
+  width: 100%;
+  margin-top: 0.8rem;
+  padding: 0.9rem 1rem;
+  border: 0;
+  border-radius: 1rem;
+  background: #f5f8fb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #0d2238;
+  cursor: pointer;
+}
+
+.role-settings-page__rule i {
+  width: 2.5rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: #ced7e1;
+}
+
+.role-settings-page__rule i[data-active='true'] {
+  background: #0d2238;
+}
+
+.role-settings-page__summary div {
+  display: grid;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.role-settings-page__summary article {
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: #f5f8fb;
+}
+
+.role-settings-page__summary strong {
+  color: #0d2238;
+}
+
+.role-settings-page__summary button {
+  width: 100%;
+  border-radius: 1rem;
+  padding: 1rem 1.1rem;
+  background: #0d2238;
+  color: white;
+  font-weight: 800;
+}
+
+@media (max-width: 1080px) {
+  .role-settings-page__grid {
+    flex-direction: column;
+  }
+
+  .role-settings-page__stack {
+    width: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .role-settings-page {
+    flex-direction: column;
+  }
+
+  .role-settings-page__sidebar {
+    width: auto;
+  }
+}

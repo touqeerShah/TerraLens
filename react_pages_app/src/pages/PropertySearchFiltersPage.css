@@ -1,0 +1,225 @@
+.property-search-page {
+  min-height: 100vh;
+  display: flex;
+  background: #eff3f6;
+}
+
+.property-search-page__sidebar {
+  width: 16rem;
+  padding: 1.8rem 1.2rem;
+  background: #f8fafc;
+  border-right: 1px solid rgba(96, 113, 133, 0.12);
+}
+
+.property-search-page__sidebar h1,
+.property-search-page__heading h2,
+.property-search-page__card h3 {
+  color: #0d2238;
+}
+
+.property-search-page__sidebar p,
+.property-search-page__heading p,
+.property-search-page__card p,
+.property-search-page__filters p,
+.property-search-page__card small {
+  color: #66778c;
+}
+
+.property-search-page__sidebar nav {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.5rem;
+}
+
+.property-search-page__sidebar a {
+  text-decoration: none;
+  color: #66778c;
+  font-weight: 700;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+}
+
+.property-search-page__sidebar a[data-active='true'] {
+  background: white;
+  color: #0d2238;
+}
+
+.property-search-page__main {
+  flex: 1;
+}
+
+.property-search-page__topbar,
+.property-search-page__heading,
+.property-search-page__layout {
+  display: flex;
+}
+
+.property-search-page__topbar {
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.4rem;
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom: 1px solid rgba(96, 113, 133, 0.1);
+  gap: 1rem;
+}
+
+.property-search-page__search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  padding: 0.95rem 1rem;
+  border-radius: 999px;
+  background: white;
+  color: #66778c;
+}
+
+.property-search-page__search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #0d2238;
+}
+
+.property-search-page__view-switch {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.property-search-page__view-switch button,
+.property-search-page__heading button {
+  border: 0;
+  cursor: pointer;
+}
+
+.property-search-page__view-switch button {
+  border-radius: 999px;
+  padding: 0.8rem 1rem;
+  background: #edf2f6;
+  color: #66778c;
+  font-weight: 700;
+}
+
+.property-search-page__view-switch button[data-active='true'] {
+  background: #0d2238;
+  color: white;
+}
+
+.property-search-page__content {
+  padding: 1.4rem;
+}
+
+.property-search-page__heading {
+  justify-content: space-between;
+  align-items: end;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.property-search-page__heading strong,
+.property-search-page__card strong,
+.property-search-page__filters strong {
+  color: #0d2238;
+}
+
+.property-search-page__heading button {
+  border-radius: 1rem;
+  padding: 0.95rem 1.1rem;
+  background: #0d2238;
+  color: white;
+  font-weight: 800;
+}
+
+.property-search-page__layout {
+  gap: 1rem;
+  align-items: start;
+}
+
+.property-search-page__filters {
+  width: 18rem;
+  padding: 1.2rem;
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  gap: 1rem;
+}
+
+.property-search-page__filters label {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.6rem;
+  color: #66778c;
+}
+
+.property-search-page__filters input[type='range'] {
+  width: 100%;
+}
+
+.property-search-page__results {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.property-search-page__results[data-view='list'] {
+  grid-template-columns: 1fr;
+}
+
+.property-search-page__results[data-view='map'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.property-search-page__card {
+  overflow: hidden;
+  border-radius: 1.6rem;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.property-search-page__card-media {
+  min-height: 11rem;
+  padding: 1rem;
+  background:
+    linear-gradient(160deg, rgba(24, 43, 63, 0.18), rgba(255, 255, 255, 0.05)),
+    linear-gradient(135deg, #34506d, #8fa5bc);
+}
+
+.property-search-page__card-media span {
+  display: inline-flex;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.property-search-page__card-body {
+  padding: 1.1rem;
+}
+
+.property-search-page__card-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 960px) {
+  .property-search-page {
+    flex-direction: column;
+  }
+
+  .property-search-page__sidebar,
+  .property-search-page__filters {
+    width: auto;
+  }
+
+  .property-search-page__layout {
+    flex-direction: column;
+  }
+}
