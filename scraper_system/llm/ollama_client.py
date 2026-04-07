@@ -12,7 +12,7 @@ class OllamaClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        chat_model: str = "qwen2.5:7b",
+        chat_model: str = "qwen2.5-coder:7b",
         embedding_model: str = "nomic-embed-text",
         timeout_seconds: int = 60,
     ) -> None:

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from core.browser_session import BrowserSession
 from core.state_store import StateStore
 from network.collector import NetworkCollector
-
+from core.browser_session import BrowserSession
 
 class NetworkCollectorAgent:
     def __init__(self, state: StateStore, max_candidates: int = 100) -> None:

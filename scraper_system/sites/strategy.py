@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from scraper_system.models.observations import PageObservation
-from scraper_system.sites.profiles import SiteProfile
+from models.observations import PageObservation
+from sites.profiles import SiteProfile
 
 
 @dataclass

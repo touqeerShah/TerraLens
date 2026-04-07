@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from models.plans import ActionPlan
+from models.plans import PlannerDecision
 
 
 DANGEROUS_TEXT_HINTS = [
@@ -36,7 +36,7 @@ def normalize_text(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def target_text(plan: ActionPlan) -> str:
+def target_text(plan: PlannerDecision) -> str:
     if not plan.target:
         return ""
     return " ".join(
@@ -52,18 +52,18 @@ def target_text(plan: ActionPlan) -> str:
     )
 
 
-def is_action_type_allowed(plan: ActionPlan) -> bool:
+def is_action_type_allowed(plan: PlannerDecision) -> bool:
     return plan.action_type in SAFE_ACTION_TYPES
 
 
-def is_target_obviously_dangerous(plan: ActionPlan) -> bool:
+def is_target_obviously_dangerous(plan: PlannerDecision) -> bool:
     text = target_text(plan)
     if not text:
         return False
     return any(hint in text for hint in DANGEROUS_TEXT_HINTS)
 
 
-def is_safe_action(plan: ActionPlan) -> tuple[bool, str | None]:
+def is_safe_action(plan: PlannerDecision) -> tuple[bool, str | None]:
     if not is_action_type_allowed(plan):
         return False, f"Unsupported or unsafe action type: {plan.action_type}"
 

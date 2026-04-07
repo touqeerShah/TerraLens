@@ -8,8 +8,7 @@ from playwright.async_api import BrowserContext, Request, Response
 from core.state_store import StateStore
 from network.normalizer import build_network_candidate
 from network.scorer import score_candidate_endpoint
-from agents.network_collector_agent import NetworkCollectorAgent
-from core import state_store
+
 
 INTERESTING_RESOURCE_TYPES = {"xhr", "fetch"}
 
@@ -49,8 +48,7 @@ class NetworkCollector:
         self.state = state
         self.max_candidates = max_candidates
         self._started = False
-        self.network_agent = NetworkCollectorAgent(state_store, max_candidates=100)
-    
+
     async def attach(self, context: BrowserContext) -> None:
         if self._started:
             return
@@ -58,7 +56,11 @@ class NetworkCollector:
         context.on("response", self._handle_response)
         self._started = True
 
-    def should_capture(self, request: Request, response: Optional[Response] = None) -> bool:
+    def should_capture(
+        self,
+        request: Request,
+        response: Optional[Response] = None,
+    ) -> bool:
         resource_type = request.resource_type
         url_lower = request.url.lower()
 
@@ -137,7 +139,8 @@ class NetworkCollector:
                 "network_candidate_captured",
                 {
                     "url": candidate.url,
-                    "score": candidate.score,
+                    "final_score": getattr(candidate, "final_score", None),
+                    "heuristic_score": getattr(candidate, "heuristic_score", None),
                     "content_type": candidate.content_type,
                 },
             )

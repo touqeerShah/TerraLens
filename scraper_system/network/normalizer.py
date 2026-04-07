@@ -130,6 +130,10 @@ def build_network_candidate(
         response_preview=response_preview,
         response_json_shape=response_json_shape,
         redirect_chain=redirect_chain or [],
-        score=0.0,
+        heuristic_score=0.0,
+        semantic_score=0.0,
+        extractability_score=0.0,
+        final_score=0.0,
         notes=[],
+        tags=[],
     )
