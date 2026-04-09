@@ -110,6 +110,11 @@ class StateStore:
                 reverse=True,
             )[:limit]
 
+    async def clear_network_candidates(self) -> None:
+        async with self._lock:
+            self.network_candidates = []
+            self.best_endpoint = None
+
     async def snapshot(self) -> dict[str, Any]:
         async with self._lock:
             return {

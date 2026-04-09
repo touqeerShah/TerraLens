@@ -3,33 +3,79 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from models.observations import PageObservation
-from models.requests import ScrapeRequest
 from models.network import NetworkCandidate
-
-
+from models.requests import ScrapeRequest
 ACTION_PLANNER_SYSTEM = """
-You are the primary browser interaction planner for a scraping agent.
-The observation packet is your eyes. Use it to understand what is visible, what blocks progress, and what single next step best moves toward the user goal.
-Keep looping toward the target results. When the target results are visibly ready, stop interaction so extraction can start.
+You are the browser action planner for a scraping agent.
 
-Return only JSON.
-Plan at most 3 actions.
-Prefer minimal safe actions.
-Prefer goal-driven UI actions over generic actions.
-Think in this order:
-1. What does the user want?
-2. What is visible now?
-3. What is blocking progress?
-4. What is the next best action?
-5. Are the target results already visible?
-6. Is filtering or pagination still needed?
-7. Should interaction stop and extraction begin?
-Allowed action types: wait, click, fill_input, click_pagination, scroll, open_filter, select_option, toggle_checkbox, click_chip, apply_filter, close_dialog, set_min_price, set_max_price.
-If a richer action type is the best fit, use it.
-Do not propose login, signup, payment, checkout, or email subscription actions.
-If results are clearly ready, return zero actions and set results_ready=true.
-Use target hints that help Playwright identify the intended control.
+Use the live page packet as the only source of truth.
+Decide the minimum safe next actions needed to move toward the user goal.
+Return JSON only.
+Do not extract data.
+Do not explain reasoning.
+
+Rules:
+- Plan at most 3 actions.
+- Prefer 0 or 1 action when sufficient.
+- Use only visible controls grounded in the page packet.
+- If results are clearly visible and usable, return no actions and set `results_ready=true`.
+- If `page.active_dialog` exists, resolve that dialog first.
+- When `page.active_dialog` exists, it is the only dialog you should consider; ignore the rest of the page until it is cleared.
+- For cookie/consent dialogs, accept only if needed to unblock the page.
+- For login/signup/newsletter/subscription dialogs, dismiss/close/cancel/not-now.
+- Never propose login, signup, payment, checkout, or subscription actions.
+- After dialogs are cleared:
+  1. use keyword search if relevant and visible
+  2. apply location first when a location goal or visible location control exists
+  3. apply the most relevant remaining visible filters
+  4. use pagination/load-more/scroll if more results are needed
+- If search needs submission, either click the visible search/apply button or use `press_enter`.
+- Do not stop at keyword search when visible filters can better match the goal.
+- Treat location as a first-class filter when the goal mentions a place name or region and location-like controls are visible.
+- Location controls may appear as buttons, comboboxes, text inputs, chips, or labels such as "Enter your town/city to show local results".
+- If `page.location_controls` is not empty, inspect those controls before assuming location is already correct.
+- If `page.filter_controls` is not empty, use them to refine bedrooms, bathrooms, type, price, sort, and listing constraints.
+- Use visible radio and checkbox filter choices such as bedrooms, bathrooms, property type, sort, and listing type when they clearly match the goal.
+- Avoid speculative multi-step plans when the first action is likely to change the page.
+- Avoid duplicate or unnecessary actions.
+
+Allowed action types:
+wait, click, fill_input, press_enter, click_pagination, scroll, open_filter, select_option, toggle_checkbox, click_chip, apply_filter, close_dialog, set_min_price, set_max_price
+
+Stop condition:
+Set `results_ready=true` only if:
+- target results are visibly present
+- no blocking dialog remains
+- extraction can begin without more interaction
+
+Also include `data_load_plan` with mode:
+- `none`
+- `pagination`
+- `load_more`
+- `infinite_scroll`
+
+Each action must include:
+- `type`
+- `label`
+- `reason`
+- `target_hint`
+
+Return exactly one JSON object matching:
+{
+  "action_type": "click",
+  "target": {
+    "role": "button",
+    "text": "Search",
+    "label": "Search",
+    "placeholder": null,
+    "css": null,
+    "field_hint": null,
+    "button_hint": "main search submit button",
+    "nearby_text": "Find properties"
+  },
+  "value": null,
+  "wait_ms": null
+}
 """.strip()
 
 NETWORK_JUDGE_SYSTEM = """
@@ -54,10 +100,8 @@ Prefer HTML when useful structure exists in markup and DOM targeting is weak.
 
 def build_action_planner_prompt(
     request: ScrapeRequest,
-    observation_packet: dict[str, Any],
+    page_packet: dict[str, Any],
     last_actions: list[dict[str, Any]],
-    blockers: list[dict[str, Any]],
-    network_summary: list[dict[str, Any]],
     cached_recipe: dict[str, Any] | None = None,
 ) -> str:
     payload = {
@@ -68,10 +112,21 @@ def build_action_planner_prompt(
         "filters": {
             k: v for k, v in request.filters.items() if k != "__required_fields__"
         },
+        "goal_filter_priority": [
+            "keyword_search",
+            "location",
+            "price",
+            "bedrooms",
+            "bathrooms",
+            "property_type",
+            "sort",
+            "listing_constraints",
+        ],
         "available_action_types": [
             "wait",
             "click",
             "fill_input",
+            "press_enter",
             "click_pagination",
             "scroll",
             "open_filter",
@@ -83,16 +138,28 @@ def build_action_planner_prompt(
             "set_min_price",
             "set_max_price",
         ],
+        "data_load_plan_modes": [
+            "pagination_next",
+            "load_more",
+            "infinite_scroll",
+            "none",
+            "unknown",
+        ],
         "planner_checklist": [
-            "Identify the visible page state and blockers.",
+            "Identify the visible page state.",
+            "If a dialog or modal is present, resolve only the current active dialog first.",
+            "Accept cookie dialogs, but ignore login or subscription dialogs by closing them.",
+            "If a keyword exists, apply it after dialogs are cleared.",
+            "If search needs submission, use a search/apply button click or press_enter.",
+            "Then inspect visible location controls before other filters when a place is relevant.",
+            "Then use relevant filters and sort controls, especially bedrooms, bathrooms, price, type, and sort.",
+            "Treat visible radio or checkbox options as valid filter choices.",
+            "Identify pagination, load more, or infinite scroll when visible.",
             "Choose the next action that best advances the user goal.",
-            "Prefer filters, selects, tabs, chips, and sort controls when visible.",
             "Stop interaction when target results are visibly ready.",
         ],
-        "page": observation_packet,
+        "page": page_packet,
         "last_actions": last_actions[-3:],
-        "blockers": blockers[:5],
-        "network_summary": network_summary[:5],
         "cached_recipe": cached_recipe,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)

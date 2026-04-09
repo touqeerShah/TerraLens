@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Optional
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class ActionTarget:
+
+class ActionTarget(BaseModel):
     role: Optional[str] = None
     text: Optional[str] = None
     label: Optional[str] = None
@@ -17,16 +17,19 @@ class ActionTarget:
     nearby_text: Optional[str] = None
 
 
-@dataclass
-class PlannedAction:
-    action_type: str   # wait | click | fill_input | click_pagination | scroll | open_filter | select_option | toggle_checkbox | click_chip | apply_filter | close_dialog | set_min_price | set_max_price
+class PlannedAction(BaseModel):
+    action_type: str = Field(
+        ...,
+        description="wait | click | fill_input | click_pagination | scroll | open_filter | "
+        "select_option | toggle_checkbox | click_chip | apply_filter | close_dialog | "
+        "set_min_price | set_max_price",
+    )
     target: Optional[ActionTarget] = None
     value: Optional[str] = None
     wait_ms: Optional[int] = None
 
 
-@dataclass
-class APICandidateDecision:
+class APICandidateDecision(BaseModel):
     request_id: str
     confidence: float
     reason: str
@@ -34,30 +37,33 @@ class APICandidateDecision:
     pagination_hint: Optional[str] = None
 
 
-@dataclass
-class DataLoadPlan:
-    mode: Optional[str] = None   # pagination_next | load_more | infinite_scroll | none | unknown
+class DataLoadPlan(BaseModel):
+    mode: Optional[str] = Field(
+        None,
+        description="pagination_next | load_more | infinite_scroll | none | unknown",
+    )
     trigger_target: Optional[ActionTarget] = None
     reason: Optional[str] = None
 
 
-@dataclass
-class ExtractionPlan:
-    mode: Optional[str] = None   # api | dom | html | null
+class ExtractionPlan(BaseModel):
+    mode: Optional[str] = Field(
+        None,
+        description="api | dom | html | null",
+    )
     container_hint: Optional[str] = None
-    field_hints: dict[str, str] = field(default_factory=dict)
+    field_hints: dict[str, str] = Field(default_factory=dict)
     html_section_hint: Optional[str] = None
     reason: Optional[str] = None
 
 
-@dataclass
-class PlannerDecision:
+class PlannerDecision(BaseModel):
     reason: str
-    actions: list[PlannedAction] = field(default_factory=list)
+    actions: list[PlannedAction] = Field(default_factory=list)
 
     results_ready: bool = False
     should_continue: bool = True
 
     data_load_plan: Optional[DataLoadPlan] = None
     extraction_plan: Optional[ExtractionPlan] = None
-    api_shortlist_ids: list[str] = field(default_factory=list)
+    api_shortlist_ids: list[str] = Field(default_factory=list)

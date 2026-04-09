@@ -75,9 +75,12 @@ class ActionExecutor:
             "toggle_checkbox",
             "click_chip",
             "apply_filter",
-            "close_dialog",
         }:
             await self._click(page, action)
+            return
+
+        if action.action_type == "close_dialog":
+            await self._click_dialog(page, action)
             return
 
         if action.action_type == "fill_input":
@@ -86,6 +89,10 @@ class ActionExecutor:
 
         if action.action_type in {"set_min_price", "set_max_price"}:
             await self._fill_input(page, action)
+            return
+
+        if action.action_type == "press_enter":
+            await self._press_enter(page, action)
             return
 
         if action.action_type == "select_option":
@@ -150,6 +157,93 @@ class ActionExecutor:
                 pass
 
         raise ActionExecutionError("Could not execute click action.")
+
+    async def _click_dialog(self, page, action: PlannedAction) -> None:
+        target = action.target
+        if not target:
+            raise ActionExecutionError("Close dialog action missing target.")
+
+        dialog_scopes = [
+            page.locator('[role="dialog"]').first,
+            page.locator('dialog').first,
+            page.locator('[aria-modal="true"]').first,
+        ]
+
+        for scope in dialog_scopes:
+            try:
+                if await scope.count() == 0:
+                    continue
+            except Exception:
+                continue
+
+            attempts = [
+                ("text", target.text),
+                ("label", target.label),
+                ("css", target.css),
+            ]
+
+            for mode, value in attempts:
+                if not value:
+                    continue
+                try:
+                    if mode == "text":
+                        await scope.get_by_text(value, exact=False).first.click(timeout=2000)
+                        return
+                    if mode == "label":
+                        await scope.get_by_label(value, exact=False).first.click(timeout=2000)
+                        return
+                    if mode == "css":
+                        await scope.locator(value).first.click(timeout=2000)
+                        return
+                except Exception:
+                    pass
+
+        await self._click(page, action)
+
+    async def _press_enter(self, page, action: PlannedAction) -> None:
+        target = action.target
+
+        if target:
+            if target.label:
+                try:
+                    locator = page.get_by_label(target.label, exact=False).first
+                    await locator.click(timeout=1000)
+                    await locator.press("Enter", timeout=1000)
+                    return
+                except Exception:
+                    pass
+
+            selectors = []
+            if target.placeholder:
+                selectors.append(f'input[placeholder*="{target.placeholder}" i]')
+            if target.css:
+                selectors.append(target.css)
+
+            selectors.extend(
+                [
+                    'input[type="search"]',
+                    'input[placeholder*="search" i]',
+                    'input[aria-label*="search" i]',
+                    'input[name*="search" i]',
+                    'input[type="text"]',
+                    'textarea',
+                ]
+            )
+
+            for selector in selectors:
+                try:
+                    locator = page.locator(selector).first
+                    await locator.click(timeout=1000)
+                    await locator.press("Enter", timeout=1000)
+                    return
+                except Exception:
+                    pass
+
+        try:
+            await page.keyboard.press("Enter")
+            return
+        except Exception as exc:
+            raise ActionExecutionError("Could not press Enter.") from exc
 
     async def _fill_input(self, page, action: PlannedAction) -> None:
         value = action.value or ""

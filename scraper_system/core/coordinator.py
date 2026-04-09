@@ -8,11 +8,9 @@ from agents.action_planner_agent import ActionPlannerAgent
 from agents.api_extractor_agent import APIExtractorAgent
 from agents.dom_extractor_agent import DOMExtractorAgent
 from agents.dom_html_judge_agent import DOMHTMLJudgeAgent
-from agents.fast_preplanner_agent import FastPrePlannerAgent
 from agents.html_extractor_agent import HTMLExtractorAgent
 from agents.network_collector_agent import NetworkCollectorAgent
 from agents.network_judge_agent import NetworkJudgeAgent
-from agents.page_observer_agent import PageObserverAgent
 from agents.recipe_cache_agent import RecipeCacheAgent
 from core.browser_session import BrowserSession
 from core.state_store import StateStore
@@ -24,7 +22,6 @@ from network.replayer import NetworkReplayer
 from network.reranker import CandidateReranker
 from network.semantic import EmbeddingSemanticScorer
 from rules.actions import ActionExecutionError, ActionExecutor
-from rules.blockers import detect_blockers
 from settings import settings
 
 
@@ -49,28 +46,27 @@ class ScrapeCoordinator:
         self.semantic_scorer = EmbeddingSemanticScorer(self.embedding_client)
         self.reranker = CandidateReranker(self.semantic_scorer)
 
-        self.observer = PageObserverAgent()
         self.network_collector = NetworkCollectorAgent(state_store, max_candidates=100)
         self.network_judge = NetworkJudgeAgent(state_store, self.reranker, self.ollama)
-        self.dom_html_judge = DOMHTMLJudgeAgent(self.observer, self.ollama)
+        self.dom_html_judge = DOMHTMLJudgeAgent(self.ollama)
         self.action_planner = ActionPlannerAgent(self.ollama)
-        self.fast_preplanner = FastPrePlannerAgent()
         self.action_executor = ActionExecutor()
         self.replayer = NetworkReplayer()
         self.api_extractor = APIExtractorAgent(self.replayer)
         self.dom_extractor = DOMExtractorAgent()
         self.html_extractor = HTMLExtractorAgent()
         self.recipe_cache = RecipeCacheAgent(self.state)
+        self.network_capture_started = False
+        self.initial_settle_seconds = settings.initial_settle_seconds
+        self.post_action_settle_seconds = settings.post_action_settle_seconds
 
     async def run(self) -> dict:
         page_signature = self._page_signature(self.request.url)
 
         try:
             await self.browser.start()
-            await self.network_collector.start(self.browser)
             await self.browser.goto(self.request.url)
-            await self.browser.wait_for_network_idle()
-            await asyncio.sleep(1.0)
+            await self._wait_until_page_settles(self.initial_settle_seconds)
 
             await self.state.add_debug_event(
                 "embedding_backend",
@@ -91,65 +87,38 @@ class ScrapeCoordinator:
                     page_signature=page_signature,
                 )
 
-                observation = await self.observer.observe(self.browser, step)
-                await self.state.add_observation(observation)
+                await self._wait_until_page_settles(self.post_action_settle_seconds)
+                page_packet = await self.action_planner.capture_page_packet(self.browser)
 
-                blockers = detect_blockers(observation)
-                compact_packet = self.observer.build_compact_packet(observation)
-                top_candidates = await self.state.get_top_network_candidates(limit=5)
-                network_summary = [c.short_dict() for c in top_candidates]
-
-                trace.blockers = blockers[:5]
-                trace.page_url = observation.url
-                trace.page_title = observation.title
+                trace.page_url = page_packet.get("url")
+                trace.page_title = page_packet.get("title")
                 trace.cache_checked = True
                 trace.cache_hit = cached_recipe_obj is not None
                 trace.cache_recipe_used = cached_recipe_payload
-                trace.network_summary = network_summary[:5]
                 trace.observation_packet = {
-                    "headings": compact_packet.get("headings", [])[:5],
-                    "buttons": compact_packet.get("buttons", [])[:5],
-                    "inputs": compact_packet.get("inputs", [])[:5],
-                    "selects": compact_packet.get("selects", [])[:5],
-                    "tabs": compact_packet.get("tabs", [])[:5],
-                    "chips": compact_packet.get("chips", [])[:5],
-                    "active_filters": compact_packet.get("active_filters", [])[:5],
-                    "result_counts": compact_packet.get("result_counts", [])[:5],
-                    "dialogs": compact_packet.get("dialogs", [])[:3],
+                    "headings": page_packet.get("headings", [])[:5],
+                    "buttons": page_packet.get("buttons", [])[:5],
+                    "inputs": page_packet.get("inputs", [])[:5],
+                    "selects": page_packet.get("selects", [])[:5],
+                    "tabs": page_packet.get("tabs", [])[:5],
+                    "options": page_packet.get("options", [])[:5],
+                    "dialogs": page_packet.get("dialogs", [])[:3],
                 }
-                trace.observation_summary = {
-                    "results_visible": compact_packet.get("results_visible"),
-                    "buttons_count": len(compact_packet.get("buttons", [])),
-                    "inputs_count": len(compact_packet.get("inputs", [])),
-                    "links_count": len(compact_packet.get("links", [])),
-                    "selects_count": len(compact_packet.get("selects", [])),
-                    "tabs_count": len(compact_packet.get("tabs", [])),
-                    "filters_count": len(compact_packet.get("filters", [])),
-                    "dialogs_count": len(compact_packet.get("dialogs", [])),
-                }
+                trace.observation_summary = page_packet.get("visible_summary", {})
                 trace.debug_notes.append(
-                    f"Observed page '{observation.title}' with results_visible={compact_packet.get('results_visible')}."
+                    f"Planner page snapshot captured for '{trace.page_title}'."
                 )
 
                 await self.state.add_debug_event(
-                    "step_observation",
+                    "planner_page_snapshot",
                     {
                         "step": step,
-                        "url": observation.url,
-                        "title": observation.title,
-                        "observation_summary": trace.observation_summary,
-                        "observation_packet": trace.observation_packet,
+                        "url": trace.page_url,
+                        "title": trace.page_title,
+                        "visible_summary": trace.observation_summary,
+                        "page_packet": trace.observation_packet,
                     },
                 )
-
-                if blockers:
-                    await self.state.add_debug_event(
-                        "blockers_detected",
-                        {
-                            "step": step,
-                            "blockers": blockers[:5],
-                        },
-                    )
 
                 last_actions = [
                     {
@@ -164,16 +133,16 @@ class ScrapeCoordinator:
 
                 decision = await self.action_planner.plan(
                     request=self.request,
-                    observation_packet=compact_packet,
+                    page_packet=page_packet,
                     last_actions=last_actions,
-                    blockers=blockers,
-                    network_summary=network_summary,
                     cached_recipe=cached_recipe_payload,
                 )
                 trace.planner_source = "llm_planner"
                 trace.planner_request = self.action_planner.last_prompt
                 trace.planner_raw_response = self.action_planner.last_raw_response
-                trace.debug_notes.append("LLM planner evaluated the current page state.")
+                trace.debug_notes.append(
+                    "LLM action planner is the only navigation decision-maker for this step."
+                )
 
                 await self.state.add_debug_event(
                     "llm_planner_io",
@@ -183,38 +152,6 @@ class ScrapeCoordinator:
                         "raw_response": self.action_planner.last_raw_response,
                     },
                 )
-
-                if self._decision_is_weak(decision):
-                    fallback = self.fast_preplanner.plan(
-                        request=self.request,
-                        observation_packet=compact_packet,
-                        blockers=blockers,
-                        last_actions=last_actions,
-                    )
-                    if fallback is not None:
-                        decision = fallback
-                        trace.planner_source = "fast_preplanner_fallback"
-                        trace.debug_notes.append(
-                            "Fallback preplanner replaced weak or empty LLM decision."
-                        )
-                        await self.state.add_debug_event(
-                            "planner_fallback_used",
-                            {
-                                "step": step,
-                                "reason": fallback.reason,
-                                "results_ready": fallback.results_ready,
-                                "actions": [
-                                    {
-                                        "action_type": a.action_type,
-                                        "target_text": a.target.text if a.target else None,
-                                        "target_label": a.target.label if a.target else None,
-                                        "value": a.value,
-                                        "wait_ms": a.wait_ms,
-                                    }
-                                    for a in fallback.actions
-                                ],
-                            },
-                        )
 
                 trace.planner_reason = decision.reason
                 trace.results_ready = decision.results_ready
@@ -252,8 +189,32 @@ class ScrapeCoordinator:
 
                 if decision.actions:
                     try:
+                        if not self.network_capture_started:
+                            await self.network_collector.start(self.browser)
+                            self.network_capture_started = True
+                            await self.state.add_debug_event(
+                                "network_capture_started",
+                                {
+                                    "step": step,
+                                    "url": self.request.url,
+                                    "message": "Network capture started just before planner-driven actions.",
+                                },
+                            )
+
+                        await self.state.clear_network_candidates()
+                        await self.state.add_debug_event(
+                            "network_candidates_cleared",
+                            {
+                                "step": step,
+                                "reason": "Cleared stale pre-action traffic before planner-driven actions.",
+                            },
+                        )
+
                         executed = await self.action_executor.execute_many(
                             self.browser, decision.actions
+                        )
+                        await self._wait_until_page_settles(
+                            self.post_action_settle_seconds
                         )
                         trace.actions_executed = executed
                         trace.debug_notes.append(
@@ -290,7 +251,6 @@ class ScrapeCoordinator:
                         )
 
                     await self.state.add_step_trace(asdict(trace))
-                    await asyncio.sleep(1.2)
                     continue
 
                 if decision.results_ready:
@@ -462,27 +422,6 @@ class ScrapeCoordinator:
                     await self.state.add_step_trace(asdict(trace))
                     break
 
-            latest_observation = await self.state.latest_observation()
-            if latest_observation and latest_observation.can_scrape_now:
-                items = await self.dom_extractor.extract(
-                    self.browser,
-                    max_items=self.request.max_items,
-                )
-                await self.state.set_final_items(items)
-                await self.state.add_debug_event(
-                    "fallback_extraction",
-                    {
-                        "step": self.request.max_steps,
-                        "mode": "dom_fallback",
-                        "items_count": len(items),
-                    },
-                )
-                return {
-                    "mode": "fallback",
-                    "items": items,
-                    "step": self.request.max_steps,
-                }
-
             await self.state.add_debug_event(
                 "goal_completion_incomplete",
                 {
@@ -530,38 +469,9 @@ class ScrapeCoordinator:
             return action.get(key)
         return getattr(action, key, None)
 
-    def _decision_is_weak(self, decision) -> bool:
-        if decision is None:
-            return True
-
-        if not decision.actions and not decision.results_ready:
-            return True
-
-        supported_action_types = {
-            "wait",
-            "click",
-            "fill_input",
-            "click_pagination",
-            "scroll",
-            "open_filter",
-            "select_option",
-            "toggle_checkbox",
-            "click_chip",
-            "apply_filter",
-            "close_dialog",
-            "set_min_price",
-            "set_max_price",
-        }
-
-        targeted_action_types = supported_action_types - {"wait", "scroll"}
-
-        for action in decision.actions:
-            if action.action_type not in supported_action_types:
-                return True
-            if action.action_type in targeted_action_types and not action.target:
-                return True
-
-        return False
+    async def _wait_until_page_settles(self, settle_seconds: float) -> None:
+        await self.browser.wait_for_network_idle(timeout_ms=settings.timeout_ms)
+        await asyncio.sleep(settle_seconds)
 
     def _build_embedding_client(self):
         if self.embedding_provider in {"huggingface", "hf"}:
