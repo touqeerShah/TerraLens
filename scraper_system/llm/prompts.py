@@ -23,24 +23,47 @@ Rules:
 - When `page.active_dialog` exists, it is the only dialog you should consider; ignore the rest of the page until it is cleared.
 - For cookie/consent dialogs, accept only if needed to unblock the page.
 - For login/signup/newsletter/subscription dialogs, dismiss/close/cancel/not-now.
+- If there is no active dialog or modal, ignore standalone login/signup/auth controls on the page. They are not blockers.
 - Never propose login, signup, payment, checkout, or subscription actions.
 - After dialogs are cleared:
-  1. use keyword search if relevant and visible
-  2. apply location first when a location goal or visible location control exists
+  1. if a location is provided or clearly mentioned in the goal, apply location first
+  2. then use keyword search if relevant and visible
   3. apply the most relevant remaining visible filters
   4. use pagination/load-more/scroll if more results are needed
 - If search needs submission, either click the visible search/apply button or use `press_enter`.
+- If the page has separate controls for location and keyword search, use them separately.
+- If a single search field is handling both keyword and place, combine them into one fill value such as "2 bedroom apartment Malta".
+- If a field usually applies on Enter, either return a separate `press_enter` action after `fill` or set `submit_after_fill=true` on the `fill` action.
+- If `location` is present in the request, do not skip it. The page is not ready until the location intent has been applied.
+- If `location_pending=true`, the next action must target `page.location_controls` before other search or filter actions.
 - Do not stop at keyword search when visible filters can better match the goal.
 - Treat location as a first-class filter when the goal mentions a place name or region and location-like controls are visible.
 - Location controls may appear as buttons, comboboxes, text inputs, chips, or labels such as "Enter your town/city to show local results".
 - If `page.location_controls` is not empty, inspect those controls before assuming location is already correct.
-- If `page.filter_controls` is not empty, use them to refine bedrooms, bathrooms, type, price, sort, and listing constraints.
 - Use visible radio and checkbox filter choices such as bedrooms, bathrooms, property type, sort, and listing type when they clearly match the goal.
 - Avoid speculative multi-step plans when the first action is likely to change the page.
 - Avoid duplicate or unnecessary actions.
+- Use primitives only. Never invent semantic action types.
 
-Allowed action types:
-wait, click, fill_input, press_enter, click_pagination, scroll, open_filter, select_option, toggle_checkbox, click_chip, apply_filter, close_dialog, set_min_price, set_max_price
+Allowed action_types (primitives only):
+- `click` → any clickable element
+- `fill` → type into an input or textarea
+- `press_enter` → submit or confirm the focused element
+- `select` → native `<select>` dropdown
+- `scroll` → scroll the page down
+- `wait` → pause only
+
+Map every real interaction to these primitives:
+- location picker → `fill`, then `click` a suggestion if visible, otherwise `press_enter`
+- checkbox filter → `click`
+- chip/tag filter → `click`
+- open filter panel → `click`
+- apply filter → `click`
+- pagination/load more → `click`
+- close dialog/cookie dismiss → `click`
+
+Never return action_type values outside:
+`click`, `fill`, `press_enter`, `select`, `scroll`, `wait`
 
 Stop condition:
 Set `results_ready=true` only if:
@@ -54,26 +77,22 @@ Also include `data_load_plan` with mode:
 - `load_more`
 - `infinite_scroll`
 
-Each action must include:
-- `type`
-- `label`
-- `reason`
-- `target_hint`
-
 Return exactly one JSON object matching:
 {
-  "action_type": "click",
+  "action_type": "fill",
+  "reason": "fill the main search field with keyword and location",
   "target": {
-    "role": "button",
-    "text": "Search",
-    "label": "Search",
-    "placeholder": null,
+    "role": "combobox",
+    "text": "Search Marketplace",
+    "label": "Search Marketplace",
+    "placeholder": "Search Marketplace",
     "css": null,
     "field_hint": null,
-    "button_hint": "main search submit button",
-    "nearby_text": "Find properties"
+    "button_hint": null,
+    "nearby_text": "property search"
   },
-  "value": null,
+  "value": "2 bedroom apartment Malta",
+  "submit_after_fill": true,
   "wait_ms": null
 }
 """.strip()
@@ -112,9 +131,14 @@ def build_action_planner_prompt(
         "filters": {
             k: v for k, v in request.filters.items() if k != "__required_fields__"
         },
+        "location_pending": bool(
+            (request.location or "").strip() and page_packet.get("location_controls")
+        ),
+        "location_strategy": _build_location_strategy(request, page_packet),
+        "search_value_hint": _build_search_value_hint(request, page_packet),
         "goal_filter_priority": [
-            "keyword_search",
             "location",
+            "keyword_search",
             "price",
             "bedrooms",
             "bathrooms",
@@ -123,20 +147,12 @@ def build_action_planner_prompt(
             "listing_constraints",
         ],
         "available_action_types": [
-            "wait",
             "click",
-            "fill_input",
+            "fill",
             "press_enter",
-            "click_pagination",
+            "select",
             "scroll",
-            "open_filter",
-            "select_option",
-            "toggle_checkbox",
-            "click_chip",
-            "apply_filter",
-            "close_dialog",
-            "set_min_price",
-            "set_max_price",
+            "wait",
         ],
         "data_load_plan_modes": [
             "pagination_next",
@@ -148,13 +164,18 @@ def build_action_planner_prompt(
         "planner_checklist": [
             "Identify the visible page state.",
             "If a dialog or modal is present, resolve only the current active dialog first.",
-            "Accept cookie dialogs, but ignore login or subscription dialogs by closing them.",
-            "If a keyword exists, apply it after dialogs are cleared.",
-            "If search needs submission, use a search/apply button click or press_enter.",
-            "Then inspect visible location controls before other filters when a place is relevant.",
+            "Accept cookie dialogs, but ignore login or subscription dialogs by clicking dismiss or close controls.",
+            "If no active dialog exists, ignore standalone auth controls such as Log in, Sign up, Email or phone, and Password.",
+            "If a location exists in the request or goal, apply it immediately after dialogs are cleared.",
+            "If location_pending=true, the next action must use a location control from page.location_controls.",
+            "If the page shows separate location and keyword controls, fill them separately.",
+            "If a keyword exists, apply it after location unless one shared search field should contain both values.",
+            "If search needs submission, use a search/apply button click, press_enter, or submit_after_fill=true on the fill action.",
+            "If one search field can take both keyword and place, combine them in the fill value.",
             "Then use relevant filters and sort controls, especially bedrooms, bathrooms, price, type, and sort.",
             "Treat visible radio or checkbox options as valid filter choices.",
-            "Identify pagination, load more, or infinite scroll when visible.",
+            "Identify only verified pagination, load more, or infinite scroll when visible.",
+            "Return only primitive actions: click, fill, press_enter, select, scroll, wait.",
             "Choose the next action that best advances the user goal.",
             "Stop interaction when target results are visibly ready.",
         ],
@@ -163,6 +184,33 @@ def build_action_planner_prompt(
         "cached_recipe": cached_recipe,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _build_search_value_hint(
+    request: ScrapeRequest, page_packet: dict[str, Any]
+) -> str | None:
+    keyword = (request.keyword or "").strip()
+    location = (request.location or "").strip()
+    separate_location_controls = bool(page_packet.get("location_controls"))
+
+    if keyword and location and not separate_location_controls:
+        return f"{keyword} {location}".strip()
+    if keyword:
+        return keyword
+    if location:
+        return location
+    return None
+
+
+def _build_location_strategy(
+    request: ScrapeRequest, page_packet: dict[str, Any]
+) -> str:
+    location = (request.location or "").strip()
+    if not location:
+        return "not_required"
+    if page_packet.get("location_controls"):
+        return "separate_location_control"
+    return "shared_search_or_not_visible"
 
 
 def build_network_judge_prompt(

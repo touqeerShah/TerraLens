@@ -20,9 +20,7 @@ class ActionTarget(BaseModel):
 class PlannedAction(BaseModel):
     action_type: str = Field(
         ...,
-        description="wait | click | fill_input | click_pagination | scroll | open_filter | "
-        "select_option | toggle_checkbox | click_chip | apply_filter | close_dialog | "
-        "set_min_price | set_max_price",
+        description="wait | click | fill | press_enter | select | scroll",
     )
     target: Optional[ActionTarget] = None
     value: Optional[str] = None

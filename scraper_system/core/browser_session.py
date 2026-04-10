@@ -52,6 +52,77 @@ class BrowserSession:
         if not self.page:
             raise RuntimeError("BrowserSession not started. Call start() first.")
         await self.page.goto(url, wait_until="domcontentloaded")
+        await self.suppress_auth_dialogs()
+
+    async def suppress_auth_dialogs(self) -> None:
+        if not self.page:
+            raise RuntimeError("Page is not initialized.")
+
+        try:
+            await self.page.evaluate(
+                """
+                () => {
+                  const AUTH_SIGNALS = [
+                    'log in', 'login', 'sign in', 'signin',
+                    'sign up', 'signup', 'create account',
+                    'register', 'subscribe', 'newsletter',
+                    'join now', 'start trial', 'get started',
+                    'continue with google', 'continue with facebook',
+                  ];
+
+                  const isAuthDialog = (el) => {
+                    const text = (el.innerText || '').toLowerCase();
+                    const matchCount = AUTH_SIGNALS.filter((signal) => text.includes(signal)).length;
+                    return matchCount >= 2;
+                  };
+
+                  const killAuthDialogs = () => {
+                    const selectors = [
+                      '[role="dialog"]',
+                      '[aria-modal="true"]',
+                      'dialog',
+                      '[class*="modal" i]',
+                      '[class*="overlay" i]',
+                      '[class*="popup" i]',
+                      '[class*="drawer" i]',
+                      '[id*="modal" i]',
+                      '[id*="login" i]',
+                      '[id*="signin" i]',
+                    ];
+
+                    selectors.forEach((selector) => {
+                      document.querySelectorAll(selector).forEach((el) => {
+                        if (isAuthDialog(el)) {
+                          el.remove();
+                        }
+                      });
+                    });
+                  };
+
+                  killAuthDialogs();
+
+                  if (window.__authDialogObserver) {
+                    window.__authDialogObserver.disconnect();
+                  }
+
+                  const observer = new MutationObserver(() => {
+                    killAuthDialogs();
+                  });
+
+                  if (document.body) {
+                    observer.observe(document.body, {
+                      childList: true,
+                      subtree: true,
+                    });
+                  }
+
+                  window.__authDialogObserver = observer;
+                }
+                """
+            )
+        except Exception:
+            # suppressor is best-effort and should never break the run
+            pass
 
     async def wait_for_network_idle(self, timeout_ms: int = 3000) -> None:
         if not self.page:

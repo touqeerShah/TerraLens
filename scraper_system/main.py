@@ -43,6 +43,7 @@ async def main() -> None:
         url="https://www.facebook.com/marketplace/category/propertyrentals",
         user_goal=user_goal,
         keyword="2 bedroom apartment",
+        location="Malta",
         max_items=settings.default_max_items,
         max_steps=settings.default_max_steps,
         headless=settings.headless,

@@ -24,12 +24,23 @@ DANGEROUS_TEXT_HINTS = [
     "continue with facebook",
 ]
 
+AUTH_CLOSE_HINTS = {"close", "not now", "no thanks", "dismiss", "cancel", "skip"}
+
 
 class ActionExecutionError(Exception):
     pass
 
 
 class ActionExecutor:
+    HANDLERS = {
+        "click": "_click",
+        "fill": "_fill",
+        "press_enter": "_press_enter",
+        "select": "_select",
+        "scroll": "_scroll",
+        "wait": "_wait",
+    }
+
     async def execute_many(
         self,
         browser: BrowserSession,
@@ -38,9 +49,9 @@ class ActionExecutor:
         results: list[dict] = []
 
         for action in actions[:3]:
-            await self.execute(browser, action)
-            results.append(
-                {
+            try:
+                await self.execute(browser, action)
+                result = {
                     "action_type": action.action_type,
                     "ok": True,
                     "value": action.value,
@@ -48,7 +59,20 @@ class ActionExecutor:
                     "target_label": action.target.label if action.target else None,
                     "target_placeholder": action.target.placeholder if action.target else None,
                 }
-            )
+                results.append(result)
+                print(f"[ACTION SUCCESS] {result}")
+            except Exception as exc:
+                result = {
+                    "action_type": action.action_type,
+                    "ok": False,
+                    "value": action.value,
+                    "target_text": action.target.text if action.target else None,
+                    "target_label": action.target.label if action.target else None,
+                    "target_placeholder": action.target.placeholder if action.target else None,
+                    "error": str(exc),
+                }
+                print(f"[ACTION FAIL] {result}")
+                raise
 
         return results
 
@@ -61,67 +85,42 @@ class ActionExecutor:
             raise ActionExecutionError("Browser page is not initialized.")
 
         self._ensure_safe(action)
-        page = browser.page
+        handler_name = self.HANDLERS.get(action.action_type)
+        if not handler_name:
+            raise ActionExecutionError(
+                f"Unknown action_type '{action.action_type}'. Allowed: {list(self.HANDLERS)}"
+            )
 
-        if action.action_type == "wait":
-            return
+        await getattr(self, handler_name)(browser.page, action)
 
-        if action.action_type == "click":
-            await self._click(page, action)
-            return
-
-        if action.action_type in {
-            "open_filter",
-            "toggle_checkbox",
-            "click_chip",
-            "apply_filter",
-        }:
-            await self._click(page, action)
-            return
-
-        if action.action_type == "close_dialog":
-            await self._click_dialog(page, action)
-            return
-
-        if action.action_type == "fill_input":
-            await self._fill_input(page, action)
-            return
-
-        if action.action_type in {"set_min_price", "set_max_price"}:
-            await self._fill_input(page, action)
-            return
-
-        if action.action_type == "press_enter":
-            await self._press_enter(page, action)
-            return
-
-        if action.action_type == "select_option":
-            await self._select_option(page, action)
-            return
-
-        if action.action_type == "click_pagination":
-            await self._click_pagination(page, action)
-            return
-
-        if action.action_type == "scroll":
-            await page.mouse.wheel(0, 2000)
-            return
-
-        raise ActionExecutionError(f"Unhandled action type: {action.action_type}")
+        if self._should_reinforce_auth_suppression(action):
+            await browser.suppress_auth_dialogs()
 
     def _ensure_safe(self, action: PlannedAction) -> None:
         if not action.target:
+            return
+
+        target_text = " ".join(
+            filter(
+                None,
+                [
+                    action.target.text,
+                    action.target.label,
+                    action.target.nearby_text,
+                ],
+            )
+        ).lower()
+
+        if any(hint in target_text for hint in AUTH_CLOSE_HINTS):
             return
 
         text = " ".join(
             filter(
                 None,
                 [
-                    action.target.text,
-                    action.target.label,
+                    target_text,
                     action.target.button_hint,
                     action.target.field_hint,
-                    action.target.nearby_text,
                 ],
             )
         ).lower()
@@ -134,105 +133,24 @@ class ActionExecutor:
         if not target:
             raise ActionExecutionError("Click action missing target.")
 
-        attempts = [
-            ("text", target.text),
-            ("label", target.label),
-            ("css", target.css),
-        ]
-
-        for mode, value in attempts:
-            if not value:
-                continue
-            try:
-                if mode == "text":
-                    await page.get_by_text(value, exact=False).first.click(timeout=2500)
-                    return
-                if mode == "label":
-                    await page.get_by_label(value, exact=False).first.click(timeout=2500)
-                    return
-                if mode == "css":
-                    await page.locator(value).first.click(timeout=2500)
-                    return
-            except Exception:
-                pass
-
-        raise ActionExecutionError("Could not execute click action.")
-
-    async def _click_dialog(self, page, action: PlannedAction) -> None:
-        target = action.target
-        if not target:
-            raise ActionExecutionError("Close dialog action missing target.")
-
-        dialog_scopes = [
-            page.locator('[role="dialog"]').first,
-            page.locator('dialog').first,
-            page.locator('[aria-modal="true"]').first,
-        ]
-
-        for scope in dialog_scopes:
-            try:
-                if await scope.count() == 0:
-                    continue
-            except Exception:
-                continue
-
-            attempts = [
-                ("text", target.text),
-                ("label", target.label),
-                ("css", target.css),
-            ]
-
-            for mode, value in attempts:
-                if not value:
-                    continue
+        roots = await self._candidate_click_roots(page)
+        for root in roots:
+            for locator in self._candidate_locators(root, target):
                 try:
-                    if mode == "text":
-                        await scope.get_by_text(value, exact=False).first.click(timeout=2000)
-                        return
-                    if mode == "label":
-                        await scope.get_by_label(value, exact=False).first.click(timeout=2000)
-                        return
-                    if mode == "css":
-                        await scope.locator(value).first.click(timeout=2000)
-                        return
+                    await locator.click(timeout=2500)
+                    await page.wait_for_timeout(250)
+                    return
                 except Exception:
                     pass
 
-        await self._click(page, action)
+        raise ActionExecutionError("Could not execute click action.")
 
     async def _press_enter(self, page, action: PlannedAction) -> None:
         target = action.target
 
         if target:
-            if target.label:
+            for locator in self._candidate_input_locators(page, target):
                 try:
-                    locator = page.get_by_label(target.label, exact=False).first
-                    await locator.click(timeout=1000)
-                    await locator.press("Enter", timeout=1000)
-                    return
-                except Exception:
-                    pass
-
-            selectors = []
-            if target.placeholder:
-                selectors.append(f'input[placeholder*="{target.placeholder}" i]')
-            if target.css:
-                selectors.append(target.css)
-
-            selectors.extend(
-                [
-                    'input[type="search"]',
-                    'input[placeholder*="search" i]',
-                    'input[aria-label*="search" i]',
-                    'input[name*="search" i]',
-                    'input[type="text"]',
-                    'textarea',
-                ]
-            )
-
-            for selector in selectors:
-                try:
-                    locator = page.locator(selector).first
                     await locator.click(timeout=1000)
                     await locator.press("Enter", timeout=1000)
                     return
@@ -245,41 +163,15 @@ class ActionExecutor:
         except Exception as exc:
             raise ActionExecutionError("Could not press Enter.") from exc
 
-    async def _fill_input(self, page, action: PlannedAction) -> None:
+    async def _fill(self, page, action: PlannedAction) -> None:
         value = action.value or ""
         target = action.target
 
         if not target:
             raise ActionExecutionError("Fill action missing target.")
 
-        if target.label:
+        for locator in self._candidate_input_locators(page, target):
             try:
-                locator = page.get_by_label(target.label, exact=False).first
-                await locator.click(timeout=1000)
-                await locator.fill(value, timeout=1000)
-                return
-            except Exception:
-                pass
-
-        selectors = []
-        if target.placeholder:
-            selectors.append(f'input[placeholder*="{target.placeholder}" i]')
-        if target.css:
-            selectors.append(target.css)
-
-        selectors.extend(
-            [
-                'input[type="search"]',
-                'input[placeholder*="search" i]',
-                'input[aria-label*="search" i]',
-                'input[name*="search" i]',
-                'input[type="text"]',
-            ]
-        )
-
-        for selector in selectors:
-            try:
-                locator = page.locator(selector).first
                 await locator.click(timeout=1000)
                 await locator.fill(value, timeout=1000)
                 return
@@ -288,7 +180,7 @@ class ActionExecutor:
 
         raise ActionExecutionError("Could not fill input.")
 
-    async def _select_option(self, page, action: PlannedAction) -> None:
+    async def _select(self, page, action: PlannedAction) -> None:
         value = action.value or ""
         target = action.target
 
@@ -342,36 +234,87 @@ class ActionExecutor:
 
         raise ActionExecutionError("Could not select option.")
 
-    async def _click_pagination(self, page, action: PlannedAction) -> None:
-        target = action.target
+    async def _scroll(self, page, action: PlannedAction) -> None:
+        await page.mouse.wheel(0, 2000)
 
-        selectors = []
-        if target and target.text:
-            selectors.append(f"text={target.text}")
-        if target and target.label:
+    async def _wait(self, page, action: PlannedAction) -> None:
+        return
+
+    def _should_reinforce_auth_suppression(self, action: PlannedAction) -> bool:
+        if action.action_type != "click" or not action.target:
+            return False
+
+        combined = " ".join(
+            filter(
+                None,
+                [
+                    action.target.text,
+                    action.target.label,
+                    action.target.button_hint,
+                ],
+            )
+        ).lower()
+        return any(hint in combined for hint in AUTH_CLOSE_HINTS)
+
+    async def _candidate_click_roots(self, page) -> list:
+        roots = []
+        for selector in ['[role="dialog"]', 'dialog', '[aria-modal="true"]']:
+            scope = page.locator(selector)
             try:
-                await page.get_by_label(target.label, exact=False).first.click(timeout=2000)
-                return
+                count = await scope.count()
+            except Exception:
+                continue
+
+            for index in range(min(count, 3)):
+                roots.append(scope.nth(index))
+
+        roots.append(page)
+        return roots
+
+    def _candidate_locators(self, root, target) -> list:
+        locators = []
+
+        if target.css:
+            locators.append(root.locator(target.css).first)
+
+        if target.label:
+            locators.append(root.get_by_label(target.label, exact=True).first)
+            locators.append(root.get_by_label(target.label, exact=False).first)
+
+        if target.role:
+            role_name = target.label or target.text
+            try:
+                if role_name:
+                    locators.append(
+                        root.get_by_role(target.role, name=role_name, exact=True).first
+                    )
+                    locators.append(
+                        root.get_by_role(target.role, name=role_name, exact=False).first
+                    )
+                else:
+                    locators.append(root.get_by_role(target.role).first)
             except Exception:
                 pass
 
-        selectors.extend(
+        if target.placeholder:
+            locators.append(root.get_by_placeholder(target.placeholder, exact=False).first)
+
+        if target.text:
+            locators.append(root.get_by_text(target.text, exact=True).first)
+            locators.append(root.get_by_text(target.text, exact=False).first)
+
+        return locators
+
+    def _candidate_input_locators(self, page, target) -> list:
+        locators = self._candidate_locators(page, target)
+        locators.extend(
             [
-                'a[rel="next"]',
-                'button[aria-label*="next" i]',
-                'a[aria-label*="next" i]',
-                'text=Next',
-                'text=Show more',
-                'text=Load more',
-                'text=See more',
+                page.locator('input[type="search"]').first,
+                page.locator('input[placeholder*="search" i]').first,
+                page.locator('input[aria-label*="search" i]').first,
+                page.locator('input[name*="search" i]').first,
+                page.locator('input[type="text"]').first,
+                page.locator("textarea").first,
             ]
         )
-
-        for selector in selectors:
-            try:
-                await page.locator(selector).first.click(timeout=2500)
-                return
-            except Exception:
-                pass
-
-        raise ActionExecutionError("Could not find a pagination control.")
+        return locators
